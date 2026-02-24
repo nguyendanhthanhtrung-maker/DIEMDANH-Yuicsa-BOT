@@ -1,44 +1,52 @@
 import os
 import asyncio
+import pytz
 from telethon import TelegramClient
-from flask import Flask
+from telethon.sessions import StringSession
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from flask import Flask, jsonify
 from threading import Thread
 
-# Cấu hình thông số
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-SESSION_STRING = os.getenv("SESSION_STRING") # Chuỗi phiên đăng nhập
-TARGET_USER = "tên_người_nhận_hoặc_bot" # Ví dụ: @apple_bot
+SESSION_STRING = os.getenv("SESSION_STRING")
+TARGET_USER = "@apple_bot" 
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+timezone = pytz.timezone("Asia/Ho_Chi_Minh")
 
-# Hàm gửi tin nhắn mỗi 24 giờ
-async def send_message_daily():
-    await client.start()
-    while True:
-        try:
-            await client.send_message(TARGET_USER, "/diemdanhapple")
-            print("Đã gửi tin nhắn điểm danh!")
-        except Exception as e:
-            print(f"Lỗi: {e}")
-        
-        # Đợi 24 giờ (86400 giây)
-        await asyncio.sleep(86400)
+async def send_message():
+    try:
+        if not client.is_connected():
+            await client.connect()
+        await client.send_message(TARGET_USER, "/diemdanhapple")
+        print("Sent /diemdanhapple at 07:00 AM VN")
+    except Exception as e:
+        print(f"Error: {e}")
 
-# Tạo Web Server để Render chấp nhận Web Service
+scheduler = AsyncIOScheduler(timezone=timezone)
+scheduler.add_job(send_message, 'cron', hour=7, minute=0)
+
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot đang chạy..."
+    return "Bot is running"
+
+@app.route('/ping')
+def ping():
+    return jsonify({"status": "alive"}), 200
 
 def run_web():
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+async def start_bot():
+    await client.start()
+    scheduler.start()
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    # Chạy Web server ở luồng riêng
-    Thread(target=run_web).start()
-    
-    # Chạy vòng lặp Telegram
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(send_message_daily())
+    Thread(target=run_web, daemon=True).start()
+    asyncio.run(start_bot())
