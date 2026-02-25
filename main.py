@@ -7,7 +7,7 @@ from telethon.sessions import StringSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # --- CẤU HÌNH BIẾN MÔI TRƯỜNG ---
-API_ID = int(os.getenv("API_ID")
+API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 TARGET_ID = int(os.getenv("TARGET_ID", 1759212113))
