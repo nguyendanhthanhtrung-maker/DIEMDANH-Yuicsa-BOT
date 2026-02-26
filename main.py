@@ -1,71 +1,84 @@
 import os
 import asyncio
 import threading
+import sys
 from flask import Flask
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
-# --- CẤU HÌNH TỪ BIẾN MÔI TRƯỜNG ---
-API_ID = os.environ.get("API_ID")
-API_HASH = os.environ.get("API_HASH")
-SESSION_STR = os.environ.get("SESSION_STR")
-PORT = int(os.environ.get("PORT", 8080))
-
-# Thông tin theo yêu cầu
-TARGET_ID = 1759212113
-COMMAND_TEXT = "/diemdanhapple"
-INTERVAL = 2 * 60 * 60  # 2 giờ
-
+# --- KHỞI TẠO FLASK ---
 app = Flask(__name__)
 
-# --- TRANG PING ---
 @app.route('/ping')
 def ping():
-    return "PONG! Userbot is active.", 200
+    return "PONG", 200
 
 @app.route('/')
 def home():
-    return "Userbot is running. Monitor via /ping", 200
+    return "Bot is running", 200
 
+def start_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+# --- LOGIC USERBOT ---
 async def run_userbot():
-    if not all([API_ID, API_HASH, SESSION_STR]):
-        print("LỖI: Thiếu biến môi trường API_ID, API_HASH hoặc SESSION_STR!")
-        return
-
-    client = TelegramClient(StringSession(SESSION_STR), int(API_ID), API_HASH)
+    print("--- ĐANG KHỞI CHẠY USERBOT ---")
     
+    # Lấy biến môi trường và kiểm tra trực tiếp
+    api_id_env = os.environ.get("API_ID")
+    api_hash = os.environ.get("API_HASH")
+    session_str = os.environ.get("SESSION_STR")
+    
+    if not all([api_id_env, api_hash, session_str]):
+        print("LỖI: Thiếu biến môi trường (API_ID, API_HASH, hoặc SESSION_STR)!")
+        sys.exit(1) # Thoát để Render báo lỗi rõ ràng
+
     try:
+        api_id = int(api_id_env)
+        target_id = 1759212113
+        message_text = "/diemdanhapple"
+        
+        client = TelegramClient(StringSession(session_str), api_id, api_hash)
+        
         await client.connect()
         if not await client.is_user_authorized():
-            print("LỖI: SESSION_STR không hợp lệ!")
+            print("LỖI: SESSION_STR không hợp lệ hoặc đã hết hạn!")
             return
 
-        print(f"Userbot ONLINE. Mục tiêu: {TARGET_ID}")
+        print(f"KẾT NỐI THÀNH CÔNG! Đang gửi tin cho {target_id}...")
 
         while True:
             try:
-                # Gửi tin nhắn ngay lập tức
-                await client.send_message(TARGET_ID, COMMAND_TEXT)
-                print(f"Đã gửi '{COMMAND_TEXT}' thành công.")
-                
-                # Sau khi gửi xong mới bắt đầu đợi 2 tiếng
-                print(f"Đang đợi 2 tiếng cho lần gửi tiếp theo...")
-                await asyncio.sleep(INTERVAL)
-                
+                # Gửi tin nhắn ngay lập tức khi bắt đầu vòng lặp
+                await client.send_message(target_id, message_text)
+                print(f"Đã gửi: {message_text} tới {target_id}")
             except Exception as e:
-                print(f"Lỗi khi gửi: {e}")
-                await asyncio.sleep(60) # Nếu lỗi (như mạng yếu) thì đợi 1 phút rồi thử lại ngay
-            
+                print(f"Lỗi gửi tin: {e}")
+
+            # Nghỉ 2 tiếng (7200 giây)
+            print("Đang nghỉ 2 tiếng...")
+            await asyncio.sleep(7200)
+
     except Exception as e:
-        print(f"Lỗi kết nối: {e}")
+        print(f"LỖI HỆ THỐNG: {e}")
+        sys.exit(1)
 
-def start_web_server():
-    app.run(host='0.0.0.0', port=PORT)
-
+# --- ĐIỂM KHỞI CHẠY CHÍNH ---
 if __name__ == "__main__":
-    # Chạy Flask Web Server để Render không tắt service
+    # 1. Chạy Web Server trong luồng riêng
+    print("Đang khởi động Web Server...")
     threading.Thread(target=start_web_server, daemon=True).start()
     
-    # Chạy Userbot
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run_userbot())
+    # 2. Xử lý Event Loop cho Userbot
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    try:
+        loop.run_until_complete(run_userbot())
+    except Exception as e:
+        print(f"Lỗi vòng lặp chính: {e}")
+        sys.exit(1)
