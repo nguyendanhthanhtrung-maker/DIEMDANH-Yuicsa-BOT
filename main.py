@@ -1,76 +1,71 @@
 import os
 import asyncio
 import threading
-from flask import Flask, jsonify
+from flask import Flask
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# --- CẤU HÌNH BIẾN MÔI TRƯỜNG ---
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-SESSION_STRING = os.getenv("SESSION_STRING")
-TARGET_ID = int(os.getenv("TARGET_ID", 1759212113))
-MESSAGE = "/diemdanhapple"
+# --- CẤU HÌNH TỪ BIẾN MÔI TRƯỜNG ---
+API_ID = os.environ.get("API_ID")
+API_HASH = os.environ.get("API_HASH")
+SESSION_STR = os.environ.get("SESSION_STR")
+PORT = int(os.environ.get("PORT", 8080))
 
-client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+# Thông tin theo yêu cầu
+TARGET_ID = 1759212113
+COMMAND_TEXT = "/diemdanhapple"
+INTERVAL = 2 * 60 * 60  # 2 giờ
 
-# --- WEB SERVER (GIỮ BOT THỨC) ---
 app = Flask(__name__)
+
+# --- TRANG PING ---
+@app.route('/ping')
+def ping():
+    return "PONG! Userbot is active.", 200
 
 @app.route('/')
 def home():
-    return "UserBot is Running 24/7", 200
+    return "Userbot is running. Monitor via /ping", 200
 
-@app.route('/ping')
-def ping():
-    return jsonify({"status": "alive"}), 200
+async def run_userbot():
+    if not all([API_ID, API_HASH, SESSION_STR]):
+        print("LỖI: Thiếu biến môi trường API_ID, API_HASH hoặc SESSION_STR!")
+        return
 
-def run_web():
-    # Render yêu cầu dùng port từ biến môi trường PORT
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-# --- CHỨC NĂNG CHÍNH ---
-async def send_task():
-    """Hàm gửi tin nhắn có xử lý lỗi tránh crash bot"""
+    client = TelegramClient(StringSession(SESSION_STR), int(API_ID), API_HASH)
+    
     try:
-        # Kiểm tra kết nối trước khi gửi
-        if not client.is_connected():
-            await client.connect()
-        
-        await client.send_message(TARGET_ID, MESSAGE)
-        print(f"--- [SUCCESS] Đã gửi '{MESSAGE}' đến {TARGET_ID} ---")
+        await client.connect()
+        if not await client.is_user_authorized():
+            print("LỖI: SESSION_STR không hợp lệ!")
+            return
+
+        print(f"Userbot ONLINE. Mục tiêu: {TARGET_ID}")
+
+        while True:
+            try:
+                # Gửi tin nhắn ngay lập tức
+                await client.send_message(TARGET_ID, COMMAND_TEXT)
+                print(f"Đã gửi '{COMMAND_TEXT}' thành công.")
+                
+                # Sau khi gửi xong mới bắt đầu đợi 2 tiếng
+                print(f"Đang đợi 2 tiếng cho lần gửi tiếp theo...")
+                await asyncio.sleep(INTERVAL)
+                
+            except Exception as e:
+                print(f"Lỗi khi gửi: {e}")
+                await asyncio.sleep(60) # Nếu lỗi (như mạng yếu) thì đợi 1 phút rồi thử lại ngay
+            
     except Exception as e:
-        print(f"--- [ERROR] Gửi tin nhắn thất bại: {e} ---")
+        print(f"Lỗi kết nối: {e}")
 
-async def main():
-    print("--- Đang khởi động UserBot ---")
-    try:
-        await client.start()
-        print("--- Đăng nhập thành công! ---")
-
-        # 1. Gửi tin nhắn ngay lập tức khi vừa khởi động
-        await send_task()
-
-        # 2. Thiết lập lịch trình gửi mỗi 2 giờ một lần
-        scheduler = AsyncIOScheduler()
-        scheduler.add_job(send_task, 'interval', hours=2)
-        scheduler.start()
-        print("--- Đã kích hoạt Scheduler: Lặp lại mỗi 2 giờ ---")
-
-        # Giữ script chạy vô tận
-        await client.run_until_disconnected()
-    except Exception as e:
-        print(f"--- [CRITICAL] Lỗi khởi động: {e} ---")
+def start_web_server():
+    app.run(host='0.0.0.0', port=PORT)
 
 if __name__ == "__main__":
-    # Chạy Web Server trên luồng phụ để không chặn AsyncIO
-    web_thread = threading.Thread(target=run_web, daemon=True)
-    web_thread.start()
-
-    # Chạy vòng lặp sự kiện chính của Bot
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        print("--- Bot đã dừng ---")
+    # Chạy Flask Web Server để Render không tắt service
+    threading.Thread(target=start_web_server, daemon=True).start()
+    
+    # Chạy Userbot
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run_userbot())
